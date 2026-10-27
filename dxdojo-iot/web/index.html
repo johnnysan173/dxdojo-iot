@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="microbit-remote" content="1">
+<title>micro:bit × Web Bluetooth スライド</title>
+<style>
+  :root{
+    --bg:#0b1220; --panel:#121c30; --fg:#eef3ff; --muted:#9fb0d0;
+    --accent:#35d0ff; --accent2:#ff7a59; --ok:#3ddc84; --ng:#ff5d6c;
+    --mono:"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;overflow:hidden}
+
+  /* ---------- slides ---------- */
+  .deck{position:fixed;inset:0}
+  .slide{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;
+    padding:6vh 8vw;opacity:0;transform:translateX(40px);transition:opacity .35s,transform .35s;pointer-events:none}
+  .slide.active{opacity:1;transform:none;pointer-events:auto}
+  .slide.exit-left{transform:translateX(-40px)}
+  .slide h1{font-size:clamp(34px,6vw,76px);line-height:1.1;margin:0 0 .3em}
+  .slide h2{font-size:clamp(28px,4.2vw,52px);margin:0 0 .5em;color:var(--accent)}
+  .slide p,.slide li{font-size:clamp(18px,2.2vw,30px);line-height:1.6;color:var(--fg)}
+  .slide ul{margin:0;padding-left:1.1em}
+  .slide li{margin:.25em 0}
+  .sub{color:var(--muted)!important;font-size:clamp(16px,1.8vw,24px)!important}
+  .tag{display:inline-block;background:var(--panel);border:1px solid #2a3a5c;border-radius:999px;
+    padding:.2em .9em;font-size:clamp(14px,1.4vw,18px);color:var(--muted);margin-bottom:1.2em}
+  code,pre{font-family:var(--mono)}
+  pre{background:var(--panel);border:1px solid #223253;border-radius:12px;padding:1em 1.2em;
+    font-size:clamp(13px,1.35vw,19px);line-height:1.5;overflow:auto;margin:.4em 0;color:#d8e4ff}
+  .k{color:#ff9d7a}.s{color:#9ee493}.c{color:#6f82a8}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:3vw;align-items:start}
+  .big{font-size:clamp(40px,7vw,96px);font-weight:800;color:var(--accent2);margin:0}
+  .flow{display:flex;align-items:center;gap:1.2vw;flex-wrap:wrap;margin:1.2em 0}
+  .box{background:var(--panel);border:1px solid #2a3a5c;border-radius:14px;padding:1em 1.3em;text-align:center;min-width:12vw}
+  .box b{display:block;font-size:clamp(18px,2vw,28px)}
+  .box span{color:var(--muted);font-size:clamp(13px,1.3vw,18px)}
+  .arrow{font-size:clamp(24px,3vw,40px);color:var(--accent)}
+  .emoji{font-size:clamp(40px,5vw,72px);line-height:1}
+
+  /* ---------- HUD ---------- */
+  .hud{position:fixed;top:14px;right:14px;display:flex;gap:10px;align-items:center;z-index:50;font-size:14px}
+  .pill{background:var(--panel);border:1px solid #2a3a5c;border-radius:999px;padding:7px 14px;color:var(--muted);display:flex;gap:8px;align-items:center}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--ng)}
+  .dot.on{background:var(--ok);box-shadow:0 0 12px var(--ok)}
+  .dot.busy{background:#ffc857;animation:blink .8s infinite}
+  @keyframes blink{50%{opacity:.3}}
+  button.btn{background:var(--accent);color:#06243a;border:0;border-radius:999px;padding:9px 18px;font-weight:700;cursor:pointer;font-size:14px}
+  button.btn:hover{filter:brightness(1.1)}
+  button.btn.ghost{background:transparent;color:var(--muted);border:1px solid #2a3a5c}
+  .counter{position:fixed;bottom:16px;right:20px;color:var(--muted);font-size:14px;font-family:var(--mono);z-index:50}
+  .progress{position:fixed;left:0;bottom:0;height:4px;background:var(--accent);width:0;transition:width .3s;z-index:50}
+  .hint{position:fixed;bottom:16px;left:20px;color:var(--muted);font-size:13px;z-index:50}
+
+  /* tilt meter */
+  .meter{position:fixed;left:20px;top:14px;width:110px;height:110px;border-radius:50%;z-index:50;
+    background:radial-gradient(circle at 50% 50%,#17233d 0 60%,transparent 61%),var(--panel);
+    border:1px solid #2a3a5c;display:none}
+  .meter.show{display:block}
+  .meter:before,.meter:after{content:"";position:absolute;background:#2a3a5c}
+  .meter:before{left:50%;top:8px;bottom:8px;width:1px}
+  .meter:after{top:50%;left:8px;right:8px;height:1px}
+  .ball{position:absolute;width:18px;height:18px;border-radius:50%;background:var(--accent2);
+    left:calc(50% - 9px);top:calc(50% - 9px);box-shadow:0 0 14px var(--accent2);transition:transform .08s linear}
+  .meter small{position:absolute;bottom:-20px;left:0;right:0;text-align:center;color:var(--muted);font-size:11px;font-family:var(--mono)}
+
+  /* log */
+  .log{position:fixed;left:20px;bottom:44px;width:360px;max-height:40vh;overflow:auto;background:rgba(18,28,48,.92);
+    border:1px solid #2a3a5c;border-radius:12px;padding:10px 12px;font-family:var(--mono);font-size:12px;color:#b9c8e8;display:none;z-index:50}
+  .log.show{display:block}
+  .log div{white-space:pre-wrap;word-break:break-all}
+  .log .cmd{color:var(--ok);font-weight:700}
+
+  /* settings panel */
+  .panel{position:fixed;top:60px;right:14px;width:400px;max-height:calc(100vh - 90px);overflow:auto;background:rgba(18,28,48,.97);
+    border:1px solid #2a3a5c;border-radius:14px;padding:14px 16px;z-index:55;display:none;font-size:13px;color:var(--fg)}
+  .panel.show{display:block}
+  .panel h3{margin:0 0 10px;font-size:15px;color:var(--accent)}
+  .panel h4{margin:14px 0 6px;font-size:13px;color:var(--muted);border-top:1px solid #2a3a5c;padding-top:10px}
+  .panel .row{display:flex;align-items:center;gap:8px;margin:6px 0;flex-wrap:wrap}
+  .panel .row label{min-width:3.5em}
+  .panel select,.panel input[type=range]{background:#0e1730;color:var(--fg);border:1px solid #2a3a5c;border-radius:6px;padding:4px 6px;font-size:13px}
+  .panel input[type=range]{padding:0;width:160px}
+  .panel .mini{background:var(--panel);color:var(--fg);border:1px solid #2a3a5c;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}
+  .panel .mini:hover{border-color:var(--accent)}
+  .panel .mini.warn{border-color:var(--accent2);color:var(--accent2)}
+  .panel .ok{color:var(--ok)} .panel .ng{color:var(--ng)}
+  .panel .mono{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .bar{height:6px;background:#1c2946;border-radius:3px;overflow:hidden;flex:1;min-width:80px}
+  .bar i{display:block;height:100%;background:var(--accent);width:0;transition:width .1s}
+  .bar.hot i{background:var(--accent2)}
+
+  /* flash on command */
+  .flash{position:fixed;inset:0;pointer-events:none;z-index:40;opacity:0;transition:opacity .25s}
+  .flash.next{background:linear-gradient(90deg,transparent 70%,rgba(53,208,255,.35));opacity:1}
+  .flash.prev{background:linear-gradient(270deg,transparent 70%,rgba(53,208,255,.35));opacity:1}
+
+  /* blackout */
+  .black{position:fixed;inset:0;background:#000;z-index:60;display:none}
+  .black.show{display:block}
+  .toast{position:fixed;top:70px;right:14px;background:var(--panel);border:1px solid #2a3a5c;border-radius:10px;
+    padding:10px 14px;font-size:13px;color:var(--fg);z-index:70;opacity:0;transition:opacity .3s;max-width:360px}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<div class="deck" id="deck">
+
+  <!-- 1 -->
+  <section class="slide">
+    <span class="tag">水曜のDX道場 第40回 ／ IoT回</span>
+    <h1>micro:bit × Web Bluetooth で<br>スライドを動かす</h1>
+    <p class="sub">手に持った micro:bit を傾けるだけで、Chromeのスライドがめくれる。<br>ケーブルなし・アプリなし・ブラウザだけ。</p>
+    <p class="sub" style="margin-top:2em">▶ 右上の「micro:bit に接続」を押して、micro:bit を右に傾けてください</p>
+  </section>
+
+  <!-- 2 -->
+  <section class="slide">
+    <h2>仕組みの全体像</h2>
+    <div class="flow">
+      <div class="box"><div class="emoji">📟</div><b>micro:bit</b><span>加速度センサー<br>傾き・振りを検知</span></div>
+      <div class="arrow">→</div>
+      <div class="box"><div class="emoji">📡</div><b>Bluetooth LE</b><span>UARTサービス<br>文字列を送信</span></div>
+      <div class="arrow">→</div>
+      <div class="box"><div class="emoji">🌐</div><b>Chrome</b><span>Web Bluetooth API<br>JavaScriptで受信</span></div>
+      <div class="arrow">→</div>
+      <div class="box"><div class="emoji">🖥️</div><b>このスライド</b><span>NEXT / PREV<br>HOME / BLACK</span></div>
+    </div>
+    <p class="sub">micro:bit は「右に傾いた」と判断したら <code>NEXT</code> という1行をBluetoothで送るだけ。<br>受け取る側は普通のWebページ。サーバーもアプリも要らない。</p>
+  </section>
+
+  <!-- 3 -->
+  <section class="slide">
+    <h2>Web Bluetooth API とは</h2>
+    <ul>
+      <li>ブラウザのJavaScriptから <b>BLEデバイスに直接</b> 接続できる標準API</li>
+      <li>対応: Chrome / Edge（PC・Android）。Safari / Firefox は非対応</li>
+      <li>セキュリティ上、<b>ユーザーのクリック</b>がないと接続ダイアログは出せない</li>
+      <li><b>https</b> または <b>localhost</b>（ローカルファイルも可）でのみ動作</li>
+    </ul>
+    <pre><span class="c">// たったこれだけで接続ダイアログが出る</span>
+<span class="k">const</span> device = <span class="k">await</span> navigator.bluetooth.<span class="s">requestDevice</span>({
+  filters: [{ namePrefix: <span class="s">"BBC micro:bit"</span> }],
+  optionalServices: [UART_SERVICE]
+});</pre>
+  </section>
+
+  <!-- 4 -->
+  <section class="slide">
+    <h2>micro:bit 側：コードを書かない</h2>
+    <div class="cols">
+      <div>
+        <ul>
+          <li>公式の <b>「BLE All Services」hex</b> をUSBでコピーするだけ</li>
+          <li>加速度計・ボタン・温度・LEDなど全センサーが<b>BLEサービスとして公開</b>される</li>
+          <li>ペアリング不要（Just Works不要）でChromeから即つながる</li>
+          <li>C++ビルド済みなので <b>V1 でもメモリ不足にならない</b></li>
+        </ul>
+        <pre><span class="c">// 判定はぜんぶブラウザ側</span>
+<span class="k">const</span> x = view.getInt16(0, <span class="k">true</span>); <span class="c">// milli-g</span>
+<span class="k">if</span> (x &gt;  500) nextSlide();
+<span class="k">if</span> (x &lt; -500) prevSlide();</pre>
+      </div>
+      <div>
+        <ul>
+          <li>⚠️ MakeCode + bluetooth拡張は V1 だと <b>エラー020（メモリ不足）</b> になりやすい</li>
+          <li>→ 今回ハマった。ジェスチャーハンドラを減らしても足りなかった</li>
+          <li>結論：<b>センサーは公開するだけ、ロジックはブラウザ</b>が一番安定</li>
+          <li>hex: tech.microbit.org/bluetooth</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section class="slide">
+    <h2>ブラウザ側（受信して動かす）</h2>
+    <pre><span class="k">const</span> server  = <span class="k">await</span> device.gatt.connect();
+<span class="k">const</span> service = <span class="k">await</span> server.getPrimaryService(UART_SERVICE);
+<span class="k">const</span> tx      = <span class="k">await</span> service.getCharacteristic(UART_TX); <span class="c">// micro:bit → PC</span>
+<span class="k">await</span> tx.startNotifications();
+tx.addEventListener(<span class="s">"characteristicvaluechanged"</span>, e => {
+  <span class="k">const</span> text = <span class="k">new</span> TextDecoder().decode(e.target.value);
+  <span class="k">if</span> (text.includes(<span class="s">"NEXT"</span>)) nextSlide();
+  <span class="k">if</span> (text.includes(<span class="s">"PREV"</span>)) prevSlide();
+});</pre>
+    <p class="sub">受け取った文字列で <code>if</code> するだけ。シリアル通信と同じ感覚で扱える。</p>
+  </section>
+
+  <!-- 6 -->
+  <section class="slide">
+    <h2>つまずきポイント</h2>
+    <ul>
+      <li>💾 MakeCode + Bluetooth は V1 で <b>エラー020（メモリ不足）</b> → 公式 All Services hex を使う</li>
+      <li>🔑 MakeCodeで作る場合は <b>No Pairing Required</b> をONにしないと、見えても繋がらない</li>
+      <li>🧭 接続ダイアログに出てこない → micro:bit を一度リセット／他のデバイスとの接続を切る</li>
+      <li>🪟 Windows：OS側でBluetoothペアリング済みだと競合することがある → OSのペアリングは削除</li>
+      <li>📦 1パケットは <b>20バイト</b>。長い文字列は分割されて届くので改行で区切って組み立てる</li>
+      <li>🔁 micro:bit に書き込み直すと接続が切れる → 「再接続」ボタンで復帰</li>
+      <li>🧑‍💻 ページは <code>https</code> か <code>localhost</code> で開く。<code>python3 -m http.server</code> が手軽</li>
+    </ul>
+  </section>
+
+  <!-- 7 -->
+  <section class="slide">
+    <h2>応用例：センサー → ブラウザ → 業務</h2>
+    <div class="cols">
+      <div>
+        <ul>
+          <li>🏭 温度・振動センサーの値をブラウザのダッシュボードに即表示</li>
+          <li>🔘 物理ボタン1つで Power Automate のフローを起動（出退勤・在庫カウント）</li>
+          <li>🧾 Copilot Studio のエージェントに「現場の状態」を渡す入口に</li>
+        </ul>
+      </div>
+      <div>
+        <ul>
+          <li>📇 NFC名刺・電子ペーパー会議案内と組み合わせて「紙を減らす」導線</li>
+          <li>🎓 子ども向けプログラミング教室の題材（傾けると動く！が一番ウケる）</li>
+          <li>🧩 Chrome拡張を1つ足せば、同じ仕組みで <b>Google Slides</b> など既存SaaSも操作できる</li>
+          <li>💡 ポイント：<b>特別なアプリを配らなくていい</b>。URLを開けば使える</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section class="slide">
+    <h2>まとめ</h2>
+    <p class="big">傾ける → 送る → 受ける</p>
+    <ul>
+      <li>micro:bit は約2,500円。Bluetooth・加速度・ボタン・LED 全部入り</li>
+      <li>Web Bluetooth で「ブラウザ＝IoTの受け口」になる</li>
+      <li>難しいのは通信ではなく、<b>ペアリング設定と20バイト制限</b>の2つだけ</li>
+    </ul>
+    <p class="sub" style="margin-top:1.5em">このあとハンズオン：NFCタグ書き込み（タグは会場で配布）</p>
+  </section>
+
+</div>
+
+<!-- HUD -->
+<div class="meter" id="meter"><div class="ball" id="ball"></div><small id="meterText">x:0 y:0</small></div>
+<div class="hud">
+  <div class="pill"><span class="dot" id="dot"></span><span id="status">未接続</span></div>
+  <label class="pill" id="fwdLabel" title="Chrome拡張「micro:bit Slide Remote」経由で Google Slides のタブに転送" style="cursor:pointer;display:none">
+    <input type="checkbox" id="fwd" style="margin:0"> Google Slidesに転送
+  </label>
+  <button class="btn ghost" id="cfgBtn" title="傾き設定 (Sキー)">⚙ 傾き設定</button>
+  <button class="btn ghost" id="logBtn" title="受信ログ (Lキー)">ログ</button>
+  <button class="btn" id="connectBtn">micro:bit に接続</button>
+</div>
+<div class="toast" id="toast"></div>
+<div class="panel" id="panel">
+  <h3>傾き設定（取り付け向きに合わせて教え込む）</h3>
+  <div class="mono" id="liveAcc">加速度: —</div>
+
+  <h4>① 基準姿勢（静止した状態）</h4>
+  <div class="row">
+    <button class="mini" id="calNeutral">今の姿勢を基準として記録</button>
+    <span class="mono" id="neutralTxt">未設定（平置き想定）</span>
+  </div>
+
+  <h4>② 動きを教える（基準姿勢から、その方向に動かした状態で押す）</h4>
+  <div id="dirRows"></div>
+
+  <h4>③ 感度</h4>
+  <div class="row"><label>しきい値</label><input type="range" id="thr" min="150" max="900" step="10"><span class="mono" id="thrTxt"></span></div>
+  <div class="row"><label>待ち時間</label><input type="range" id="cool" min="200" max="2000" step="100"><span class="mono" id="coolTxt"></span></div>
+  <div class="row"><label>なめらかさ</label><input type="range" id="smooth" min="1" max="9" step="1"><span class="mono" id="smoothTxt"></span></div>
+
+  <div class="row" style="margin-top:12px">
+    <button class="mini warn" id="cfgReset">初期設定に戻す</button>
+    <span class="mono">設定はこのブラウザに自動保存</span>
+  </div>
+</div>
+<div class="log" id="log"></div>
+<div class="hint">← → : 移動 ／ Home : 先頭 ／ B : 暗転 ／ S : 傾き設定 ／ L : ログ ／ F : 全画面</div>
+<div class="counter" id="counter">1 / 8</div>
+<div class="progress" id="progress"></div>
+<div class="flash" id="flash"></div>
+<div class="black" id="black"></div>
+
+<script>
+/* ===================== スライド制御 ===================== */
+const slides = [...document.querySelectorAll('.slide')];
+let cur = 0;
+function show(n, dir){
+  n = Math.max(0, Math.min(slides.length-1, n));
+  if(n === cur && slides[cur].classList.contains('active')) return;
+  slides.forEach((s,i)=>{
+    s.classList.remove('active','exit-left');
+    if(i < n) s.classList.add('exit-left');
+  });
+  cur = n;
+  slides[cur].classList.add('active');
+  document.getElementById('counter').textContent = `${cur+1} / ${slides.length}`;
+  document.getElementById('progress').style.width = ((cur+1)/slides.length*100)+'%';
+  if(dir){ const f=document.getElementById('flash'); f.className='flash '+dir; setTimeout(()=>f.className='flash',250); }
+}
+const nextSlide = ()=>show(cur+1,'next');
+const prevSlide = ()=>show(cur-1,'prev');
+const homeSlide = ()=>show(0);
+const toggleBlack = ()=>document.getElementById('black').classList.toggle('show');
+show(0);
+
+document.addEventListener('keydown', e=>{
+  if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();nextSlide();}
+  else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();prevSlide();}
+  else if(e.key==='Home') homeSlide();
+  else if(e.key.toLowerCase()==='b') toggleBlack();
+  else if(e.key.toLowerCase()==='l') document.getElementById('log').classList.toggle('show');
+  else if(e.key.toLowerCase()==='s') document.getElementById('panel').classList.toggle('show');
+  else if(e.key.toLowerCase()==='f') document.documentElement.requestFullscreen?.();
+});
+document.getElementById('black').addEventListener('click', toggleBlack);
+document.getElementById('logBtn').addEventListener('click', ()=>document.getElementById('log').classList.toggle('show'));
+document.getElementById('cfgBtn').addEventListener('click', ()=>document.getElementById('panel').classList.toggle('show'));
+
+/* ===================== 表示ユーティリティ ===================== */
+const logEl = document.getElementById('log');
+function log(msg, cls){
+  const d=document.createElement('div'); if(cls) d.className=cls;
+  d.textContent = new Date().toLocaleTimeString('ja-JP',{hour12:false}) + '  ' + msg;
+  logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight;
+  while(logEl.children.length>200) logEl.removeChild(logEl.firstChild);
+}
+let toastTimer;
+function toast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3500);
+}
+function setStatus(text, state){
+  document.getElementById('status').textContent = text;
+  document.getElementById('dot').className = 'dot ' + (state||'');
+}
+
+/* ===================== Web Bluetooth (micro:bit UART) ===================== */
+// Nordic UART Service（micro:bit のBluetooth UARTサービスと同じUUID）
+const UART_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const UART_TX      = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // micro:bit → PC (notify/indicate)
+const UART_RX      = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // PC → micro:bit (write)
+// micro:bit 標準サービス（プランB: UARTなし。傾き判定はブラウザ側）
+const ACC_SERVICE  = 'e95d0753-251d-470a-a062-fa1922dfa9a8';
+const ACC_DATA     = 'e95dca4b-251d-470a-a062-fa1922dfa9a8'; // int16 x3 (milli-g)
+const ACC_PERIOD   = 'e95dfb24-251d-470a-a062-fa1922dfa9a8'; // uint16 ms
+const BTN_SERVICE  = 'e95d9882-251d-470a-a062-fa1922dfa9a8';
+const BTN_A        = 'e95dda90-251d-470a-a062-fa1922dfa9a8';
+const BTN_B        = 'e95dda91-251d-470a-a062-fa1922dfa9a8';
+
+let device = null, txChar = null, rxChar = null;
+let manualDisconnect = false, reconnectTimer = null, reconnectTries = 0;
+const MAX_RECONNECT = 20;
+let buffer = '';           // 20バイトずつ届く断片を改行で組み立てる
+const decoder = new TextDecoder();
+
+const connectBtn = document.getElementById('connectBtn');
+connectBtn.addEventListener('click', async ()=>{
+  if(device && device.gatt.connected){ manualDisconnect = true; await disconnect(); return; }
+  clearTimeout(reconnectTimer); reconnectTries = 0; manualDisconnect = false;
+  await connect();
+});
+
+async function connect(){
+  if(!navigator.bluetooth){
+    toast('このブラウザは Web Bluetooth 非対応です。Chrome / Edge で開いてください。');
+    log('navigator.bluetooth が存在しません'); return;
+  }
+  try{
+    setStatus('デバイスを選択中…','busy');
+    if(!device){
+      device = await navigator.bluetooth.requestDevice({
+        filters:[{ namePrefix:'BBC micro:bit' }],
+        optionalServices:[UART_SERVICE, ACC_SERVICE, BTN_SERVICE]
+      });
+      device.addEventListener('gattserverdisconnected', onDisconnected);
+      log('選択: ' + device.name);
+    }
+    setStatus('接続中…','busy');
+    const server  = await device.gatt.connect();
+    log('GATT接続OK。サービス一覧を取得中…');
+    const services = await server.getPrimaryServices();
+    const uuids = services.map(s=>s.uuid);
+    log('サービス: ' + uuids.map(u=>u.slice(0,8)).join(', '));
+    let mode = 'UART';
+    let service = services.find(s=>s.uuid===UART_SERVICE) || null;
+    if(!service && !uuids.includes(ACC_SERVICE)){
+      throw new Error('UARTも加速度計サービスも見つかりません。MakeCodeの書き込み内容と「No Pairing Required」設定を確認してください');
+    }
+    if(service){
+      txChar = await service.getCharacteristic(UART_TX);
+      try{ rxChar = await service.getCharacteristic(UART_RX); }catch(_){ rxChar=null; }
+      await txChar.startNotifications();
+      txChar.addEventListener('characteristicvaluechanged', onData);
+      buffer = '';
+    }else{
+      // プランB: 加速度計サービス＋ボタンサービス
+      mode = 'ACC';
+      const acc = await server.getPrimaryService(ACC_SERVICE);
+      try{ const per = await acc.getCharacteristic(ACC_PERIOD); await per.writeValue(new Uint16Array([160])); }catch(_){}
+      const accData = await acc.getCharacteristic(ACC_DATA);
+      await accData.startNotifications();
+      accData.addEventListener('characteristicvaluechanged', onAccel);
+      try{
+        const btn = await server.getPrimaryService(BTN_SERVICE);
+        const a = await btn.getCharacteristic(BTN_A); await a.startNotifications();
+        a.addEventListener('characteristicvaluechanged', e=>{ if(e.target.value.getUint8(0)===1) handleLine('PREV'); });
+        const b = await btn.getCharacteristic(BTN_B); await b.startNotifications();
+        b.addEventListener('characteristicvaluechanged', e=>{ if(e.target.value.getUint8(0)===1) handleLine('NEXT'); });
+      }catch(_){ log('ボタンサービスなし（傾きのみ）'); }
+      armed = true;
+    }
+    reconnectTries = 0;
+    log('モード: ' + mode);
+    setStatus(device.name.replace('BBC micro:bit','micro:bit') + ' [' + mode + ']','on');
+    connectBtn.textContent = '切断';
+    toast('接続しました。micro:bit を傾けてみてください');
+    log('接続完了');
+  }catch(err){
+    log('エラー: ' + err.message);
+    if(err.name==='NotFoundError'){ setStatus('未接続',''); } // キャンセル
+    else if(reconnectTries === 0){ setStatus('接続失敗',''); toast('接続できませんでした: ' + err.message); }
+    if(!(device && device.gatt.connected) && reconnectTries === 0) connectBtn.textContent = device ? '再接続' : 'micro:bit に接続';
+  }
+}
+
+async function disconnect(){
+  clearTimeout(reconnectTimer);
+  try{ device.gatt.disconnect(); }catch(_){}
+}
+
+function onDisconnected(){
+  document.getElementById('meter').classList.remove('show');
+  log('切断');
+  if(manualDisconnect || !device){
+    setStatus('切断されました','');
+    connectBtn.textContent = '再接続';
+    return;
+  }
+  // 自動再接続（一度選んだデバイスはダイアログなしで再接続できる）
+  if(reconnectTries >= MAX_RECONNECT){
+    setStatus('再接続に失敗','');
+    connectBtn.textContent = '再接続';
+    toast('自動再接続に失敗しました。「再接続」ボタンを押してください');
+    return;
+  }
+  reconnectTries++;
+  const wait = Math.min(500 * reconnectTries, 3000);
+  setStatus(`再接続中… (${reconnectTries})`,'busy');
+  connectBtn.textContent = '再接続中…';
+  log(`自動再接続 ${reconnectTries}/${MAX_RECONNECT}（${wait}ms後）`);
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(async ()=>{
+    try{ await connect(); }
+    catch(e){ log('再接続エラー: ' + e.message); }
+    // connect() 内で失敗した場合は gatt が繋がっていないので、もう一度 onDisconnected を回す
+    if(!(device && device.gatt.connected)) onDisconnected();
+  }, wait);
+}
+
+function onData(e){
+  buffer += decoder.decode(e.target.value);
+  let idx;
+  while((idx = buffer.indexOf('\n')) >= 0){
+    const line = buffer.slice(0, idx).trim();
+    buffer = buffer.slice(idx+1);
+    if(line) handleLine(line);
+  }
+  if(buffer.length > 200) buffer = '';   // 改行が来ない異常系の保険
+}
+
+let lastCmd = 0;
+function handleLine(line){
+  if(line.startsWith('A,')){           // 加速度: A,x,y,z
+    const [,x,y,z] = line.split(',').map(Number);
+    document.getElementById('meter').classList.add('show');
+    updateMeter(x,y,z);
+    return;
+  }
+  log('受信: ' + line, 'cmd');
+  const now = Date.now();
+  if(now - lastCmd < 400) return;      // 二重発火防止
+  lastCmd = now;
+  if(forward){
+    window.postMessage({type:'MICROBIT_REMOTE', cmd: line.toUpperCase()}, '*');
+    return;   // 転送中はこのページのスライドは動かさない
+  }
+  switch(line.toUpperCase()){
+    case 'NEXT':  nextSlide(); break;
+    case 'PREV':  prevSlide(); break;
+    case 'HOME':  homeSlide(); break;
+    case 'BLACK': toggleBlack(); break;
+    default: log('未知のコマンド: ' + line);
+  }
+}
+
+/* ===================== 傾き判定（教え込み式） =====================
+   基準姿勢からの差分ベクトル delta と、各方向に登録した単位ベクトルの内積で判定。
+   取り付け向きが変わっても、基準と各方向を記録し直せば対応できる。 */
+const DIRS = [
+  {id:'right', name:'右', def:[ 1, 0, 0], cmd:'NEXT'},
+  {id:'left',  name:'左', def:[-1, 0, 0], cmd:'PREV'},
+  {id:'fwd',   name:'前', def:[ 0,-1, 0], cmd:'HOME'},
+  {id:'back',  name:'後', def:[ 0, 1, 0], cmd:'BLACK'},
+];
+const CMDS = [['NEXT','次へ'],['PREV','前へ'],['HOME','先頭へ'],['BLACK','暗転'],['','なし']];
+const CFG_KEY = 'microbit-tilt-cfg-v1';
+const defaultCfg = ()=>({ neutral:null, dirs:Object.fromEntries(DIRS.map(d=>[d.id,{vec:null,cmd:d.cmd}])), threshold:450, cooldown:600, smooth:4 });
+let cfg = defaultCfg();
+try{ const s = localStorage.getItem(CFG_KEY); if(s){ cfg = Object.assign(defaultCfg(), JSON.parse(s)); } }catch(_){}
+function saveCfg(){ try{ localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); }catch(_){} }
+
+let armed = true, lastFire = 0;
+let acc = null;                 // 平滑化した加速度
+let sampling = null;            // {sum:[..], n, until, done}
+const norm = v=>Math.hypot(v[0],v[1],v[2]);
+const unit = v=>{ const n=norm(v)||1; return [v[0]/n,v[1]/n,v[2]/n]; };
+
+function onAccel(e){
+  const v = e.target.value;
+  const raw = [v.getInt16(0,true), v.getInt16(2,true), v.getInt16(4,true)];
+  const a = cfg.smooth/10;                       // EMA
+  acc = acc ? acc.map((p,i)=>p*(1-a)+raw[i]*a) : raw;
+  document.getElementById('meter').classList.add('show');
+  updateMeter(acc[0],acc[1],acc[2]);
+  document.getElementById('liveAcc').textContent = `加速度: x:${acc[0]|0} y:${acc[1]|0} z:${acc[2]|0}`;
+
+  if(sampling){                                  // 記録中
+    sampling.sum = sampling.sum.map((s,i)=>s+raw[i]); sampling.n++;
+    if(Date.now() >= sampling.until){ const r = sampling.sum.map(s=>s/sampling.n); const cb = sampling.done; sampling=null; cb(r); }
+    return;
+  }
+
+  const neutral = cfg.neutral || [0,0,-1024];
+  const delta = acc.map((p,i)=>p-neutral[i]);
+  let best = null;
+  for(const d of DIRS){
+    const vec = cfg.dirs[d.id].vec || d.def;
+    const u = unit(vec);
+    const score = delta[0]*u[0]+delta[1]*u[1]+delta[2]*u[2];
+    renderScore(d.id, score);
+    if(!best || score > best.score) best = {d, score};
+  }
+  const now = Date.now();
+  if(best && best.score > cfg.threshold){
+    if(armed && now - lastFire > cfg.cooldown){
+      const cmd = cfg.dirs[best.d.id].cmd;
+      armed = false; lastFire = now;
+      if(cmd) handleLine(cmd); else log(`傾き[${best.d.name}]（コマンドなし）`);
+    }
+  }else if(best && best.score < cfg.threshold*0.5){
+    armed = true;                                // 基準付近に戻ったら再び受け付ける
+  }
+}
+
+function sample(ms, done){ sampling = {sum:[0,0,0], n:0, until:Date.now()+ms, done}; }
+
+/* ---- 設定パネル UI ---- */
+function renderScore(id, score){
+  const el = document.getElementById('bar-'+id); if(!el) return;
+  const pct = Math.max(0, Math.min(100, score / 1024 * 100));
+  el.querySelector('i').style.width = pct+'%';
+  el.classList.toggle('hot', score > cfg.threshold);
+  document.getElementById('score-'+id).textContent = (score|0);
+}
+function renderCfg(){
+  document.getElementById('neutralTxt').textContent = cfg.neutral
+    ? `基準: x:${cfg.neutral[0]|0} y:${cfg.neutral[1]|0} z:${cfg.neutral[2]|0}` : '未設定（平置き想定）';
+  const rows = document.getElementById('dirRows'); rows.innerHTML = '';
+  for(const d of DIRS){
+    const c = cfg.dirs[d.id];
+    const row = document.createElement('div'); row.className='row';
+    row.innerHTML = `<label>${d.name}</label>
+      <button class="mini" data-learn="${d.id}">この動きを記録</button>
+      <span class="${c.vec?'ok':'mono'}">${c.vec ? '記録済' : '既定'}</span>
+      <select data-cmd="${d.id}">${CMDS.map(([v,n])=>`<option value="${v}" ${c.cmd===v?'selected':''}>${n}</option>`).join('')}</select>
+      <div class="bar" id="bar-${d.id}"><i></i></div><span class="mono" id="score-${d.id}" style="min-width:3em;text-align:right">0</span>`;
+    rows.appendChild(row);
+  }
+  rows.querySelectorAll('[data-learn]').forEach(b=>b.addEventListener('click', ()=>learnDir(b.dataset.learn)));
+  rows.querySelectorAll('[data-cmd]').forEach(s=>s.addEventListener('change', ()=>{ cfg.dirs[s.dataset.cmd].cmd = s.value; saveCfg(); }));
+  document.getElementById('thr').value = cfg.threshold;   document.getElementById('thrTxt').textContent = cfg.threshold + ' mg';
+  document.getElementById('cool').value = cfg.cooldown;   document.getElementById('coolTxt').textContent = cfg.cooldown + ' ms';
+  document.getElementById('smooth').value = cfg.smooth;   document.getElementById('smoothTxt').textContent = cfg.smooth<=3?'なめらか':cfg.smooth>=7?'機敏':'標準';
+}
+function needAcc(){ if(!acc){ toast('先に micro:bit に接続してください（加速度が届いていません）'); return false; } return true; }
+function learnNeutral(){
+  if(!needAcc()) return;
+  toast('基準姿勢を記録中… 1秒間そのまま'); 
+  sample(1000, r=>{ cfg.neutral = r; saveCfg(); renderCfg(); toast('基準姿勢を記録しました'); log('基準: '+r.map(v=>v|0).join(',')); });
+}
+function learnDir(id){
+  if(!needAcc()) return;
+  const d = DIRS.find(x=>x.id===id);
+  toast(`「${d.name}」の動きを記録中… その姿勢のまま1秒`);
+  sample(1000, r=>{
+    const neutral = cfg.neutral || [0,0,-1024];
+    const vec = r.map((v,i)=>v-neutral[i]);
+    if(norm(vec) < 150){ toast('基準姿勢との差が小さすぎます。もっと大きく動かした状態で押してください'); return; }
+    cfg.dirs[id].vec = vec; saveCfg(); renderCfg();
+    toast(`「${d.name}」を記録しました（強さ ${norm(vec)|0}）`); log(`方向[${d.name}]: `+vec.map(v=>v|0).join(','));
+  });
+}
+document.getElementById('calNeutral').addEventListener('click', learnNeutral);
+document.getElementById('thr').addEventListener('input', e=>{ cfg.threshold=+e.target.value; saveCfg(); document.getElementById('thrTxt').textContent = cfg.threshold+' mg'; });
+document.getElementById('cool').addEventListener('input', e=>{ cfg.cooldown=+e.target.value; saveCfg(); document.getElementById('coolTxt').textContent = cfg.cooldown+' ms'; });
+document.getElementById('smooth').addEventListener('input', e=>{ cfg.smooth=+e.target.value; saveCfg(); renderCfg(); });
+document.getElementById('cfgReset').addEventListener('click', ()=>{ cfg = defaultCfg(); saveCfg(); renderCfg(); toast('初期設定に戻しました'); });
+renderCfg();
+
+function updateMeter(x,y,z){
+  // micro:bit の加速度は ±1024 ≒ ±1g。半径40pxにマッピング
+  const r = 40, cx = Math.max(-1024,Math.min(1024,x))/1024*r, cy = Math.max(-1024,Math.min(1024,y))/1024*r;
+  document.getElementById('ball').style.transform = `translate(${cx}px, ${cy}px)`;
+  document.getElementById('meterText').textContent = `x:${x} y:${y}`;
+}
+
+// 任意：PC→micro:bit に文字を送る（応用デモ用）。例: sendToMicrobit("hi")
+async function sendToMicrobit(text){
+  if(!rxChar) return log('RX特性が見つかりません');
+  await rxChar.writeValue(new TextEncoder().encode(text + '\n'));
+  log('送信: ' + text);
+}
+window.sendToMicrobit = sendToMicrobit;
+
+if(!navigator.bluetooth){ setStatus('Web Bluetooth 非対応',''); }
+
+/* ===================== Chrome拡張（Google Slides転送）連携 ===================== */
+let forward = false;
+const fwdBox = document.getElementById('fwd');
+fwdBox.addEventListener('change', ()=>{
+  forward = fwdBox.checked;
+  toast(forward ? 'Google Slides のタブへ転送します（このページのスライドは動きません）' : 'このページのスライドを操作します');
+  log('転送モード: ' + (forward ? 'ON' : 'OFF'));
+});
+window.addEventListener('message', ev=>{
+  if(ev.source !== window || !ev.data) return;
+  if(ev.data.type === 'MICROBIT_REMOTE_READY'){
+    document.getElementById('fwdLabel').style.display = 'flex';
+    log('Chrome拡張 micro:bit Slide Remote を検出');
+  }else if(ev.data.type === 'MICROBIT_REMOTE_ACK'){
+    if(ev.data.ok) log('転送OK → ' + (ev.data.tabTitle || 'Google Slides') + ' : ' + ev.data.cmd, 'cmd');
+    else { log('転送失敗: ' + ev.data.error); toast('転送失敗: ' + ev.data.error); }
+  }
+});
+</script>
+</body>
+</html>

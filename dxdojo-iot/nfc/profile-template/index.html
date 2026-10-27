@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>山田 太郎 ｜ プロフィール</title>
+<meta name="description" content="NFC名刺から開くプロフィールページ">
+<style>
+  :root{ --bg:#0f172a; --card:#1e293b; --fg:#f1f5f9; --muted:#94a3b8; --accent:#38bdf8; }
+  *{ box-sizing:border-box }
+  body{ margin:0; background:var(--bg); color:var(--fg); font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif; }
+  main{ max-width:480px; margin:0 auto; padding:32px 20px 48px; }
+  .avatar{ width:112px; height:112px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; font-size:44px; font-weight:700; color:#0f172a; margin:0 auto 16px; }
+  h1{ font-size:26px; text-align:center; margin:0 0 4px; }
+  .title{ text-align:center; color:var(--muted); margin:0 0 20px; font-size:15px; }
+  .bio{ background:var(--card); border-radius:14px; padding:16px; font-size:15px; line-height:1.7; margin-bottom:24px; }
+  a.btn{ display:flex; align-items:center; justify-content:center; gap:10px; background:var(--card); color:var(--fg); text-decoration:none; border-radius:14px; padding:16px; font-size:16px; font-weight:600; margin-bottom:12px; border:1px solid #334155; }
+  a.btn.primary{ background:var(--accent); color:#0f172a; border-color:var(--accent); }
+  a.btn:active{ transform:scale(.98) }
+  footer{ text-align:center; color:var(--muted); font-size:12px; margin-top:32px; }
+</style>
+</head>
+<body>
+<main>
+  <!-- ▼ ここから自分の情報に書き換える ▼ -->
+  <div class="avatar">山</div>
+  <h1>山田 太郎</h1>
+  <p class="title">株式会社サンプル ／ DX推進担当</p>
+  <div class="bio">
+    業務改善と自動化が得意です。Power Automate・Copilot Studio・IoTの小ネタを集めています。
+    お気軽にご連絡ください。
+  </div>
+
+  <a class="btn primary" href="#" id="vcard">📇 連絡先をスマホに保存</a>
+  <a class="btn" href="https://example.com">🏢 会社サイト</a>
+  <a class="btn" href="https://www.linkedin.com/in/yourname">💼 LinkedIn</a>
+  <a class="btn" href="https://x.com/yourname">𝕏 X (Twitter)</a>
+  <a class="btn" href="mailto:you@example.com">✉️ メール</a>
+  <!-- ▲ ここまで ▲ -->
+
+  <footer>NFC名刺から開いています ｜ 水曜のDX道場 第40回</footer>
+</main>
+<script>
+  // 「連絡先を保存」: vCard を生成してダウンロード（iPhone/Android の連絡先に追加できる）
+  const me = {
+    name: "山田 太郎", org: "株式会社サンプル", title: "DX推進担当",
+    email: "you@example.com", tel: "", url: "https://example.com"
+  };
+  document.getElementById("vcard").addEventListener("click", e => {
+    e.preventDefault();
+    const v = ["BEGIN:VCARD","VERSION:3.0",`FN:${me.name}`,`ORG:${me.org}`,`TITLE:${me.title}`,
+      me.email ? `EMAIL:${me.email}` : "", me.tel ? `TEL:${me.tel}` : "", me.url ? `URL:${me.url}` : "", "END:VCARD"]
+      .filter(Boolean).join("\r\n");
+    const a = document.createElement("a");
+    a.href = "data:text/vcard;charset=utf-8," + encodeURIComponent(v);
+    a.download = "contact.vcf"; a.click();
+  });
+</script>
+</body>
+</html>
